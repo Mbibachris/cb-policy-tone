@@ -1,0 +1,31 @@
+[project]
+name = "cb-policy-tone"
+version = "0.1.0"
+description = "Hawkish/neutral/dovish tone classifier for Bank of Ghana MPC statements"
+requires-python = ">=3.10"
+dependencies = [
+    "requests",
+    "beautifulsoup4",
+    "pdfplumber",
+    "pandas",
+    "scikit-learn",
+    "statsmodels",
+    "nltk",
+    "matplotlib",
+]
+
+[project.optional-dependencies]
+train = ["torch", "transformers", "datasets", "accelerate", "evaluate"]
+app = ["gradio", "plotly"]
+dev = ["pytest", "ruff", "jupyter"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
