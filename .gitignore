@@ -9,3 +9,4 @@ scratch/
 models/*.bin
 models/*.safetensors
 .env
+data/processed/sentences*.csv
