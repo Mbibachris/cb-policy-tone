@@ -10,6 +10,9 @@ Each document is matched to a meeting using three independent clues, in this ord
   2. the meeting number written in the text (e.g. '41st meeting')
   3. the month and year in the post title (reliable from about 2010)
 If the clues disagree the document is flagged as a conflict for manual review.
+A letterhead date that falls near no meeting stops the match: the document is reported as
+unmatched instead of being placed by a weaker clue. A statement that fits no regular meeting
+is also tried against the emergency meetings.
 """
 
 from __future__ import annotations
@@ -49,6 +52,7 @@ RATE_TERM_RE = re.compile(r"policy rate|prime rate|\bMPR\b", re.IGNORECASE)
 PCT_RE = re.compile(r"(\d{1,2}(?:\.\d+)?)\s*(?:per\s*cent|percent|%)", re.IGNORECASE)
 
 STATEMENT_TYPES = {"press_release", "emergency", "highlights"}
+LENGTH_TOLERANCE = 0.02  # two texts this close in length count as the same document
 SUPPORT_WORDS = ["summary of economic", "charts", "developments report", "inflation outlook",
                  "global economic developments", "impact of covid", "infographic"]  # fmt: skip
 
@@ -145,6 +149,8 @@ def match_regular(text: str, title: str, regular: pd.DataFrame) -> dict:
 
     if by_date is not None:
         chosen, method = by_date, "letterhead_date"
+    elif d is not None:
+        chosen, method = None, "letterhead_no_meeting"
     elif by_number is not None and by_title in (None, by_number):
         chosen, method = by_number, "text_number"
     elif by_title is not None:
@@ -154,6 +160,7 @@ def match_regular(text: str, title: str, regular: pd.DataFrame) -> dict:
     clues = {x for x in (by_date, by_number, by_title) if x is not None}
     return {
         "meeting_no": chosen,
+        "meeting_type": "regular",
         "match_method": method,
         "conflict": len(clues) > 1,
         "title_ok": (by_title == chosen) if ym else None,
@@ -166,25 +173,55 @@ def match_regular(text: str, title: str, regular: pd.DataFrame) -> dict:
     }
 
 
-def match_emergency(text: str, emergency: pd.DataFrame) -> dict:
+def match_emergency(text: str, title: str, emergency: pd.DataFrame) -> dict:
+    """Match against emergency meetings, by letterhead date (+/- 3 days) or title month."""
     d = letterhead_date(text)
-    chosen = None
+    by_date = None
     if d is not None and not emergency.empty:
         diff = (pd.Timestamp(d) - emergency["meeting_end"]).dt.days.abs()
         if diff.min() <= 3:
-            chosen = int(emergency.loc[diff.idxmin(), "meeting_no"])
+            by_date = int(emergency.loc[diff.idxmin(), "meeting_no"])
+    ym = title_month(title)
+    by_title = None
+    if ym is not None and not emergency.empty:
+        ends = emergency["meeting_end"]
+        hits = emergency[(ends.dt.year == ym[0]) & (ends.dt.month == ym[1])]
+        by_title = int(hits.iloc[0]["meeting_no"]) if len(hits) == 1 else None
+    chosen = by_date if by_date is not None else by_title
+    if by_date is not None:
+        method = "letterhead_date"
+    elif by_title is not None:
+        method = "title"
+    else:
+        method = "no_rate_row"
+    clues = {x for x in (by_date, by_title) if x is not None}
     return {
         "meeting_no": chosen,
-        "match_method": "letterhead_date" if chosen else "no_rate_row",
-        "conflict": False,
-        "title_ok": None,
-        "by_date": chosen,
+        "meeting_type": "emergency",
+        "match_method": method,
+        "conflict": len(clues) > 1,
+        "title_ok": (by_title == chosen) if ym else None,
+        "by_date": by_date,
         "by_number": None,
-        "by_title": None,
+        "by_title": by_title,
         "letterhead_date": d.isoformat() if d else "",
         "text_number": text_meeting_number(text),
-        "title_ym": "",
+        "title_ym": f"{ym[0]}-{ym[1]:02d}" if ym else "",
     }
+
+
+def match_document(
+    text: str, title: str, kind: str, regular: pd.DataFrame, emergency: pd.DataFrame
+) -> dict:
+    """Emergency releases go to emergency meetings; anything unplaced gets a second try there."""
+    if kind == "emergency":
+        return match_emergency(text, title, emergency)
+    result = match_regular(text, title, regular)
+    if result["meeting_no"] is None:
+        fallback = match_emergency(text, title, emergency)
+        if fallback["meeting_no"] is not None:
+            return fallback
+    return result
 
 
 def load_text(pdf_path: Path) -> str:
@@ -220,12 +257,7 @@ def classify_documents(manifest: pd.DataFrame, rates: pd.DataFrame) -> list[dict
         if kind in STATEMENT_TYPES:
             text = load_text(Path(r.file))
             body = norm(text)
-            doc.update(
-                match_emergency(text, emergency)
-                if kind == "emergency"
-                else match_regular(text, r.title, regular)
-            )
-            doc["meeting_type"] = "emergency" if kind == "emergency" else "regular"
+            doc.update(match_document(text, r.title, kind, regular, emergency))
             doc["n_chars"] = len(body)
             doc["text_hash"] = hashlib.sha256(body.encode()).hexdigest()[:12]
             doc["txt_file"] = (TXT_DIR / f"{Path(r.file).stem}.txt").as_posix()
@@ -239,6 +271,13 @@ def classify_documents(manifest: pd.DataFrame, rates: pd.DataFrame) -> list[dict
                 doc["role"] = "unmatched"
         docs.append(doc)
     return docs
+
+
+def near_identical(a: dict, b: dict) -> bool:
+    if a["text_hash"] == b["text_hash"]:
+        return True
+    longer = max(a["n_chars"], b["n_chars"])
+    return abs(a["n_chars"] - b["n_chars"]) / longer <= LENGTH_TOLERANCE
 
 
 def choose_primaries(docs: list[dict]) -> None:
@@ -258,12 +297,17 @@ def choose_primaries(docs: list[dict]) -> None:
             if d is primary:
                 continue
             is_summary = d["doc_type"] == "highlights" and primary["doc_type"] != "highlights"
-            d["role"] = "summary_of_primary" if is_summary else "duplicate"
+            if is_summary:
+                d["role"] = "summary_of_primary"
+            elif near_identical(d, primary):
+                d["role"] = "duplicate"
+            else:
+                d["role"] = "conflicting_version"
             d["duplicate_of"] = primary["doc_id"]
             d["text_identical"] = d["text_hash"] == primary["text_hash"]
 
 
-INT_COLUMNS = ["meeting_no", "by_date", "by_number", "by_title", "text_number"]
+INT_COLUMNS = ["meeting_no", "by_date", "by_number", "by_title", "text_number", "n_chars"]
 
 
 def to_frame(docs: list[dict]) -> pd.DataFrame:
@@ -311,7 +355,8 @@ def report(docs: list[dict], statements: pd.DataFrame, coverage: pd.DataFrame) -
     for y, grp in missing.groupby(missing["meeting_end"].dt.year):
         print(f"   {y}: " + ", ".join(f"#{n}" for n in grp["meeting_no"]))
 
-    cand = review[review["role"].isin(["primary", "duplicate", "summary_of_primary"])]
+    matched = ["primary", "duplicate", "summary_of_primary", "conflicting_version"]
+    cand = review[review["role"].isin(matched)]
     conflicts = cand[cand["conflict"].eq(True)]
     print(f"\nDocuments whose clues disagree ({len(conflicts)}):")
     for d in conflicts.itertuples():
@@ -329,7 +374,14 @@ def report(docs: list[dict], statements: pd.DataFrame, coverage: pd.DataFrame) -
     un = review[review["role"] == "unmatched"]
     print(f"\nStatements that could not be matched to any meeting ({len(un)}):")
     for d in un.itertuples():
-        print(f"   id {d.doc_id} | {d.title[:40]} | {d.opening[:70]}")
+        print(f"   id {d.doc_id} | {d.title[:34]} | {d.match_method} | letterhead "
+              f"{d.letterhead_date or 'none'} | {d.opening[:60]}")  # fmt: skip
+
+    diff = review[review["role"] == "conflicting_version"]
+    print(f"\nDifferent documents matched to the same meeting ({len(diff)}):")
+    for d in diff.itertuples():
+        print(f"   id {d.doc_id} ({d.n_chars} chars) vs primary {d.duplicate_of} | "
+              f"#{d.meeting_no} {d.meeting_type} | {d.title[:34]}")  # fmt: skip
 
     dup = review[review["role"] == "duplicate"]
     print(
@@ -337,7 +389,7 @@ def report(docs: list[dict], statements: pd.DataFrame, coverage: pd.DataFrame) -
         f"(identical text: {int(dup['text_identical'].eq(True).sum())})"
     )
     for d in dup[dup["text_identical"].eq(False)].itertuples():
-        print(f"   NOT identical: id {d.doc_id} vs primary {d.duplicate_of} | {d.title[:40]}")
+        print(f"   near-identical only: id {d.doc_id} vs primary {d.duplicate_of} | {d.title[:40]}")
 
     bad = statements[statements["rate_agrees"].eq(False)]
     print(
