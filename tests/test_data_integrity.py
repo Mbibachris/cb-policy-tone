@@ -38,3 +38,13 @@ def test_two_emergency_meetings(rates):
 def test_corrected_and_latest_rates(rates, meeting_no, expected_mpr):
     row = rates[(rates["meeting_no"] == meeting_no) & (rates["meeting_type"] == "regular")]
     assert row["mpr"].iloc[0] == expected_mpr
+
+def test_meeting_94_dates_follow_the_statement(rates):
+    row = rates[(rates["meeting_no"] == 94) & (rates["meeting_type"] == "regular")]
+    assert row["meeting_end"].iloc[0] == pd.Timestamp("2020-05-15")
+
+
+def test_meeting_94_has_a_statement():
+    coverage = pd.read_csv("data/processed/coverage.csv")
+    row = coverage[(coverage["meeting_no"] == 94) & (coverage["meeting_type"] == "regular")]
+    assert bool(row["has_statement"].iloc[0])    

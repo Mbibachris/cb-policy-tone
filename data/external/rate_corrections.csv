@@ -5,3 +5,5 @@ meeting_no,meeting_type,field,old_value,new_value,evidence_doc_id,evidence
 81,regular,mpr,16.0,18.0,17219,Statement says the policy rate was cut by 200 bp to 18.0 percent
 59,regular,meeting_type,regular,emergency,22527,April 2014 statement refers to its own meeting as the 59th regular one and to an emergency meeting in February 2014
 60,regular,meeting_no,60,59,22527,Same statement: the 31 March to 2 April 2014 meeting is the 59th regular meeting
+94,regular,meeting_start,2020-05-19,2020-05-11,22716,News coverage says the Committee began meeting on Monday 11 May 2020 (secondary source)
+94,regular,meeting_end,2020-05-21,2020-05-15,22716,Statement is dated 15 May 2020 and keeps the policy rate at 14.5 percent

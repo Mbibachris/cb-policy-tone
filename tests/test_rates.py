@@ -100,3 +100,15 @@ def test_added_meeting_that_already_exists_is_rejected(raw_table):
     )
     with pytest.raises(ValueError, match="already exists"):
         clean(raw_table, additions=added)
+
+def test_correction_can_change_a_meeting_date(raw_table):
+    fix = correction(field="meeting_end", old_value="2005-03-24", new_value="2005-03-20")
+    out = clean(raw_table, corrections=fix)
+    assert out.loc[out["meeting_no"] == 13, "meeting_end"].iloc[0] == pd.Timestamp("2005-03-20")
+    assert out["corrected"].tolist() == [False, True, False]
+
+
+def test_date_correction_with_wrong_old_date_is_rejected(raw_table):
+    fix = correction(field="meeting_end", old_value="2005-03-25", new_value="2005-03-20")
+    with pytest.raises(ValueError, match="expected meeting_end"):
+        clean(raw_table, corrections=fix)        

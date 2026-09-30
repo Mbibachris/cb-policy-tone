@@ -36,8 +36,14 @@ RANGE_RE = re.compile(
     r"(?P<d2>\d{1,2}),\s*(?P<y>\d{4})"
 )
 SINGLE_RE = re.compile(r"^(?P<m1>[A-Za-z]+)\s+(?P<d1>\d{1,2}),\s*(?P<y>\d{4})")
-COERCE = {"mpr": float, "meeting_no": int, "meeting_type": str}
-
+COERCE = {
+    "mpr": float,
+    "meeting_no": int,
+    "meeting_type": str,
+    "meeting_start": pd.Timestamp,
+    "meeting_end": pd.Timestamp,
+    "effective_date": pd.Timestamp,
+}
 
 def parse_meeting_dates(text: str) -> tuple[date, date, bool]:
     """'August 29 – September 1, 2011' -> (start, end, is_emergency)."""
