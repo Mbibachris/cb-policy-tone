@@ -1,0 +1,7 @@
+meeting_no,meeting_type,field,old_value,new_value,evidence_doc_id,evidence
+13,regular,mpr,15.5,18.5,22435,Statement says the Prime Rate was maintained at 18.5 percent
+29,regular,mpr,14.3,14.25,22487,Statement says the Prime Rate rose from 13.5 to 14.25 percent (table rounded it)
+65,regular,mpr,24.0,22.0,22560,Statement says the policy rate was maintained at 22 percent
+81,regular,mpr,16.0,18.0,17219,Statement says the policy rate was cut by 200 bp to 18.0 percent
+59,regular,meeting_type,regular,emergency,22527,April 2014 statement refers to its own meeting as the 59th regular one and to an emergency meeting in February 2014
+60,regular,meeting_no,60,59,22527,Same statement: the 31 March to 2 April 2014 meeting is the 59th regular meeting
