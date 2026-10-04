@@ -11,3 +11,4 @@ models/*.safetensors
 .env
 data/processed/sentences*.csv
 data/labels/gold_annotation*.xlsx
+*.egg-info/
