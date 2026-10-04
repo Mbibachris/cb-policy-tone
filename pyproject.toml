@@ -17,7 +17,7 @@ dependencies = [
 [project.optional-dependencies]
 train = ["torch", "transformers", "datasets", "accelerate", "evaluate"]
 app = ["gradio", "plotly"]
-dev = ["pytest", "ruff", "jupyter"]
+dev = ["pytest", "ruff", "jupyter", "openpyxl"]
 
 [build-system]
 requires = ["setuptools>=68"]

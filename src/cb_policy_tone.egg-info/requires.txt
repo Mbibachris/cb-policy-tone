@@ -15,6 +15,7 @@ plotly
 pytest
 ruff
 jupyter
+openpyxl
 
 [train]
 torch

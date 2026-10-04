@@ -24,3 +24,4 @@ Provides-Extra: dev
 Requires-Dist: pytest; extra == "dev"
 Requires-Dist: ruff; extra == "dev"
 Requires-Dist: jupyter; extra == "dev"
+Requires-Dist: openpyxl; extra == "dev"

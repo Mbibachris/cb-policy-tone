@@ -102,7 +102,7 @@ SECTION_HINTS = [
     ("admin", r"information(?:al)? note"),
     ("global", r"global|world|international"),
     ("inflation", r"inflation|price"),
-    ("growth", r"growth|real sector|economic activity|output|domestic"),
+    ("growth", r"growth|real sector|economic activity|output"),
     ("fiscal", r"fiscal|budget|government|debt"),
     ("external", r"external|exchange rate|balance of payments|reserves|foreign|trade"),
     ("financial", r"financial|monetary|banking|credit|money market|interest rate"),
