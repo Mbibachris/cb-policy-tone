@@ -17,10 +17,22 @@ Tone indices: model_net (the fine-tuned model) and lexicon_net, reported side by
 Reading     : descriptive and correlational. About 115 observations, and a statement is not an
               exogenous event. No causal claims. A null result is a result.
 The lexicon is NOT adjusted in response to anything this script prints.
+
+AMENDMENT 1 (made after the first real run, recorded here on purpose)
+----------------------------------------------------------------------
+The text-derived inflation control proved noisy: it returned implausible values for a handful of
+meetings (for example 0.3 percent in 2014) and nothing for a quarter of the statements. The
+control is therefore measured, where a file is supplied, from the official monthly CPI series
+(data/external/cpi_inflation.csv: month, cpi_yoy), using the latest month BEFORE the meeting month.
+This changes how a CONTROL is measured, not the tone indices, the outcome or the test. Results
+under both measurements are to be reported. Results already seen under the original measurement:
+momentum-only coefficients positive and significant; with the noisy inflation control, positive
+and significant in sample, with no out-of-sample gain.
 """
 
 from __future__ import annotations
 
+import argparse
 import re
 import sys
 from pathlib import Path
@@ -36,14 +48,17 @@ INDEX = Path("data/processed/tone_index.csv")
 RATES = Path("data/processed/policy_rates.csv")
 STATEMENTS = Path("data/processed/statements.csv")
 OVERRIDES = Path("data/external/inflation_overrides.csv")
+OFFICIAL_CPI = Path("data/external/cpi_inflation.csv")
 INFLATION_OUT = Path("data/processed/inflation_from_statements.csv")
 SPLIT_YEAR = 2018
 TONE_VARIABLES = ["model_net", "lexicon_net"]
 
 SKIP = re.compile(
-    r"core|food|expectation|target|band|objective|forecast|project|outlook|risk|pressure|real ",
+    r"core|food|expectation|forecast|project|expected|anticipat|outlook|real |"
+    r"month[- ]on[- ]month|m-o-m|m/m|quarter[- ]on[- ]quarter|q-o-q",
     re.IGNORECASE,
 )
+NOT_A_LEVEL = re.compile(r"target|band|objective|range|ceiling|limit|programme", re.IGNORECASE)
 LEVEL = re.compile(
     r"\binflation\b.{0,160}?\b(?:rose|fell|declined|increased|decreased|eased|moderated|accelerated"
     r"|picked up|stood|stands|remained|remains|was|is|at|to|of)\s+"
@@ -54,13 +69,19 @@ LEVEL = re.compile(
 
 
 def extract_inflation(sentences: list[str]) -> float | None:
-    """The first headline-inflation level stated in the opening sentences of a statement."""
+    """The first headline year-on-year inflation level stated in a statement's opening sentences.
+
+    Skips forecasts, core and food inflation, and month-on-month figures, and rejects a number
+    that belongs to the target ('a target of 8 percent') rather than to actual inflation.
+    """
     for text in sentences[:60]:
         if SKIP.search(text):
             continue
-        m = LEVEL.search(text)
-        if m and 0 < float(m.group(1)) < 100:
-            return float(m.group(1))
+        for m in LEVEL.finditer(text):
+            before = text[max(0, m.start(1) - 40) : m.start(1)]
+            value = float(m.group(1))
+            if 0 < value < 100 and not NOT_A_LEVEL.search(before):
+                return value
     return None
 
 
@@ -91,6 +112,28 @@ def apply_overrides(inflation: pd.DataFrame, overrides: pd.DataFrame | None) -> 
     mask = fixed["meeting_no"].isin(list(fix))
     fixed.loc[mask, "infl"] = fixed.loc[mask, "meeting_no"].map(fix).astype(float)
     return fixed
+
+
+def official_inflation(
+    meetings: pd.DataFrame, cpi: pd.DataFrame, max_age_months: int = 3
+) -> pd.DataFrame:
+    """CPI inflation known at each meeting: the latest month BEFORE the meeting's own month."""
+    series = (
+        cpi.assign(period=pd.PeriodIndex(cpi["month"], freq="M"))
+        .set_index("period")["cpi_yoy"]
+        .sort_index()
+    )
+    rows = []
+    for number, end in zip(
+        meetings["meeting_no"], pd.to_datetime(meetings["meeting_end"]), strict=True
+    ):
+        target = pd.Period(end, freq="M") - 1
+        known = series[series.index <= target]
+        value = np.nan
+        if len(known) and (target - known.index[-1]).n <= max_age_months:
+            value = float(known.iloc[-1])
+        rows.append({"meeting_no": int(number), "meeting_type": "regular", "infl": value})
+    return pd.DataFrame(rows)
 
 
 def build_frame(
@@ -221,25 +264,42 @@ def report(frame: pd.DataFrame) -> None:
 
 
 def main() -> None:
+    parser = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawTextHelpFormatter
+    )
+    parser.add_argument(
+        "--text-inflation",
+        action="store_true",
+        help="use the text-derived control even if an official file exists",
+    )
+    args = parser.parse_args()
+
     index = pd.read_csv(INDEX)
     rates = pd.read_csv(RATES)
-    statements = pd.read_csv(STATEMENTS)
-    inflation = statement_inflation(statements)
-    overrides = pd.read_csv(OVERRIDES) if OVERRIDES.exists() else None
-    inflation = apply_overrides(inflation, overrides)
-    inflation.to_csv(INFLATION_OUT, index=False)
-    reg = inflation[inflation["meeting_type"] == "regular"].sort_values("meeting_no")
-    print(
-        f"Inflation figure extracted from {int(reg['infl'].notna().sum())} of {len(reg)} regular statements."
-    )
-    print("Check this series against what you know (meeting_no: inflation):")
-    print(
-        ", ".join(
-            f"{int(n)}:{v:.1f}"
-            for n, v in zip(reg["meeting_no"], reg["infl"], strict=True)
-            if pd.notna(v)
+    if OFFICIAL_CPI.exists() and not args.text_inflation:
+        meetings = rates[rates["meeting_type"] == "regular"][["meeting_no", "meeting_end"]]
+        inflation = official_inflation(meetings, pd.read_csv(OFFICIAL_CPI))
+        print(
+            f"Inflation control: OFFICIAL monthly CPI from {OFFICIAL_CPI} (month before each meeting)."
         )
-    )
+        print(f"Meetings with a value: {int(inflation['infl'].notna().sum())} of {len(inflation)}")
+    else:
+        statements = pd.read_csv(STATEMENTS)
+        inflation = statement_inflation(statements)
+        overrides = pd.read_csv(OVERRIDES) if OVERRIDES.exists() else None
+        inflation = apply_overrides(inflation, overrides)
+        inflation.to_csv(INFLATION_OUT, index=False)
+        reg = inflation[inflation["meeting_type"] == "regular"].sort_values("meeting_no")
+        print(
+            f"Inflation control: TEXT-DERIVED from {int(reg['infl'].notna().sum())} of {len(reg)} regular statements (noisy)."
+        )
+        print(
+            ", ".join(
+                f"{int(n)}:{v:.1f}"
+                for n, v in zip(reg["meeting_no"], reg["infl"], strict=True)
+                if pd.notna(v)
+            )
+        )
     frame = build_frame(index, rates, inflation)
     report(frame)
 

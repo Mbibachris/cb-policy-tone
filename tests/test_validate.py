@@ -49,6 +49,21 @@ def synthetic(n: int = 160, slope: float = 1.3, seed: int = 4) -> tuple[pd.DataF
         (["The medium-term inflation target is 8 percent.", "Inflation was 9.4 percent."], 9.4),
         (["Core inflation rose to 10 percent.", "Inflation expectations remain anchored."], None),
         (["Growth was 5.0 percent in 2019."], None),
+        (
+            ["Headline inflation rose to 12.4 percent, above the upper limit of the target band."],
+            12.4,
+        ),
+        (["Inflation at 12.4 percent remains above the target band of 8 percent."], 12.4),
+        (["Inflation remained above the target of 8 percent."], None),
+        (["Inflation is projected to decline to 10 percent by end-year."], None),
+        (
+            [
+                "Inflation rose 0.3 percent month-on-month in March.",
+                "Inflation was 11.8 percent in March.",
+            ],
+            11.8,
+        ),
+        (["Inflation fell by 1.2 percentage points to 11.8 percent in January."], 11.8),
     ],
 )
 def test_extract_inflation(sentences, expected):
@@ -125,3 +140,25 @@ def test_the_report_runs_with_and_without_an_inflation_control(capsys):
     assert "momentum + inflation" in capsys.readouterr().out
     v.report(v.build_frame(index, rates, None))
     assert "momentum + inflation" not in capsys.readouterr().out
+
+
+# ---- official CPI as the inflation control ----
+
+
+def test_official_inflation_uses_the_month_before_the_meeting_and_never_the_future():
+    cpi = pd.DataFrame(
+        {"month": ["2022-01", "2022-02", "2022-03", "2022-04"], "cpi_yoy": [13.9, 15.7, 19.4, 23.6]}
+    )
+    meetings = pd.DataFrame(
+        {"meeting_no": [1, 2, 3], "meeting_end": ["2022-04-20", "2022-03-18", "2022-09-20"]}
+    )
+    out = v.official_inflation(meetings, cpi).set_index("meeting_no")["infl"]
+    assert out[1] == 19.4  # April meeting: March is the latest month before it
+    assert out[2] == 15.7  # March meeting: February
+    assert np.isnan(out[3])  # September: the newest figure is too old
+
+
+def test_official_inflation_is_missing_when_there_is_no_earlier_data():
+    cpi = pd.DataFrame({"month": ["2022-06"], "cpi_yoy": [29.8]})
+    meetings = pd.DataFrame({"meeting_no": [1], "meeting_end": ["2022-03-18"]})
+    assert np.isnan(v.official_inflation(meetings, cpi)["infl"].iloc[0])
