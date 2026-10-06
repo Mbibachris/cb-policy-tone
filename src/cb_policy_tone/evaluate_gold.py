@@ -4,6 +4,7 @@ Reads : data/labels/gold_annotation.xlsx        your labels (partial labelling i
         data/labels/gold_key_DO_NOT_OPEN.csv    split, draw type and lexicon labels (ids only)
         data/processed/weak_labels.csv          lexicon labels and the rules that fired
         data/processed/predictions_tone.csv     model probabilities (optional)
+        data/processed/predictions_fed.csv      Fed-trained model, zero-shot, by gold_id (optional)
 Writes: data/labels/gold_dev_errors.csv         DEV sentences where the lexicon disagrees with you
 
 Discipline:
@@ -28,6 +29,7 @@ from cb_policy_tone.gold_sample import ANNOTATION, HEADERS, KEY, TONES, TOPICS
 
 WEAK = Path("data/processed/weak_labels.csv")
 PREDICTIONS = Path("data/processed/predictions_tone.csv")
+PREDICTIONS_FED = Path("data/processed/predictions_fed.csv")
 DEV_ERRORS = Path("data/labels/gold_dev_errors.csv")
 MODEL_LABELS = ["dovish", "neutral", "hawkish"]  # the order of the model's probability columns
 ORDER = ["hawkish", "neutral", "dovish"]
@@ -46,18 +48,25 @@ def load_gold(path: Path = ANNOTATION) -> pd.DataFrame:
 
 
 def assemble(
-    gold: pd.DataFrame, key: pd.DataFrame, weak: pd.DataFrame, predictions: pd.DataFrame | None
+    gold: pd.DataFrame,
+    key: pd.DataFrame,
+    weak: pd.DataFrame,
+    predictions: pd.DataFrame | None,
+    fed: pd.DataFrame | None = None,
 ) -> pd.DataFrame:
     df = gold.merge(key, on="gold_id", how="left")
     df = df.merge(weak[["sentence_id", "hawk_rules", "dove_rules"]], on="sentence_id", how="left")
     df["lexicon_tone"] = df["weak_tone"]
     df["lexicon_topic"] = df["weak_topic"]
     df["model_tone"] = np.nan
+    df["fed_tone"] = np.nan
     if predictions is not None:
         probs = predictions.set_index("sentence_id")[[f"p_{label}" for label in MODEL_LABELS]]
         best = probs.to_numpy().argmax(axis=1)
         picked = pd.Series([MODEL_LABELS[i] for i in best], index=probs.index)
         df["model_tone"] = df["sentence_id"].map(picked)
+    if fed is not None:
+        df["fed_tone"] = df["gold_id"].map(fed.set_index("gold_id")["fed_label"])
     return df
 
 
@@ -128,6 +137,7 @@ def dev_errors(df: pd.DataFrame) -> pd.DataFrame:
 def report(df: pd.DataFrame) -> None:
     sys.stdout.reconfigure(errors="replace")
     has_model = df["model_tone"].notna().any()
+    has_fed = df["fed_tone"].notna().any()
     print(
         f"Labelled sentences: {len(df)} (dev {int((df['split'] == 'dev').sum())}, test {int((df['split'] == 'test').sum())})"
     )
@@ -148,6 +158,8 @@ def report(df: pd.DataFrame) -> None:
         }
         if has_model:
             systems["model"] = part["model_tone"]
+        if has_fed:
+            systems["fed zero-shot"] = part["fed_tone"]
         print(f"\n=== {name} (n={len(part)}) ===")
         intervals = bootstrap(
             part["gold_tone"], {k: v for k, v in systems.items() if k != "always neutral"}
@@ -160,19 +172,23 @@ def report(df: pd.DataFrame) -> None:
             print(
                 f"  {system:15s} accuracy {s['accuracy']:.2f} | macro-F1 {s['macro_f1']:.2f}{ci_text} | F1: {f1s}"
             )
-        if has_model:
-            lo, hi = intervals["model minus lexicon"]
-            print(f"  model minus lexicon, macro-F1: 95% CI {lo:+.2f} to {hi:+.2f}")
+        for other in ("model", "fed zero-shot"):
+            if other in systems:
+                lo, hi = intervals[f"{other} minus lexicon"]
+                print(f"  {other} minus lexicon, macro-F1: 95% CI {lo:+.2f} to {hi:+.2f}")
         topic_ok = (part["lexicon_topic"] == part["gold_topic"]).mean()
         print(f"  lexicon topic accuracy: {topic_ok:.2f}")
 
     test = df[df["split"] == "test"]
     if len(test) >= 20:
         print("\nConfusion on gold-test (rows = your label, columns = prediction):")
-        for system in ("lexicon", "model"):
-            if system == "model" and not has_model:
+        for system, col, present in (
+            ("lexicon", "lexicon_tone", True),
+            ("model", "model_tone", has_model),
+            ("fed zero-shot", "fed_tone", has_fed),
+        ):
+            if not present:
                 continue
-            col = f"{system}_tone"
             matrix = confusion_matrix(test["gold_tone"], test[col], labels=ORDER)
             print(f"  {system}:")
             print(
@@ -187,7 +203,8 @@ def main() -> None:
     key = pd.read_csv(KEY)
     weak = pd.read_csv(WEAK)
     predictions = pd.read_csv(PREDICTIONS) if PREDICTIONS.exists() else None
-    df = assemble(gold, key, weak, predictions)
+    fed = pd.read_csv(PREDICTIONS_FED) if PREDICTIONS_FED.exists() else None
+    df = assemble(gold, key, weak, predictions, fed)
     report(df)
     errors = dev_errors(df)
     errors.to_csv(DEV_ERRORS, index=False)

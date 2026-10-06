@@ -123,3 +123,29 @@ def test_the_report_runs_with_and_without_a_model(labelled_sheet, capsys):
     assert "lexicon" in capsys.readouterr().out
     eg.report(eg.assemble(gold, key, weak, probs))
     assert "model minus lexicon" in capsys.readouterr().out
+
+
+def test_the_fed_zero_shot_system_is_scored_when_its_predictions_exist(labelled_sheet, capsys):
+    path, sample = labelled_sheet
+    gold = eg.load_gold(path)
+    key = gs.make_key(sample)
+    weak = pd.DataFrame({"sentence_id": sample["sentence_id"], "hawk_rules": "", "dove_rules": ""})
+    fed = pd.DataFrame({"gold_id": sample["gold_id"], "fed_label": "neutral"})
+    df = eg.assemble(gold, key, weak, None, fed)
+    assert set(df["fed_tone"]) == {"neutral"}
+    eg.report(df)
+    out = capsys.readouterr().out
+    assert "fed zero-shot minus lexicon" in out
+    assert "fed zero-shot:" in out  # its confusion matrix
+
+
+def test_without_fed_predictions_the_column_is_empty_and_the_report_still_runs(
+    labelled_sheet, capsys
+):
+    path, sample = labelled_sheet
+    gold = eg.load_gold(path)
+    weak = pd.DataFrame({"sentence_id": sample["sentence_id"], "hawk_rules": "", "dove_rules": ""})
+    df = eg.assemble(gold, gs.make_key(sample), weak, None)
+    assert df["fed_tone"].isna().all()
+    eg.report(df)
+    assert "fed zero-shot" not in capsys.readouterr().out
