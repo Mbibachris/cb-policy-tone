@@ -12,3 +12,5 @@ models/*.safetensors
 data/processed/sentences*.csv
 data/labels/gold_annotation*.xlsx
 *.egg-info/
+data/processed/hf/
+data/labels/gold_dev_errors.csv
