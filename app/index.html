@@ -1,0 +1,310 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Bank of Ghana Policy Tone</title>
+<script src="https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.35.2/plotly.min.js"></script>
+<style>
+  :root {
+    --bg: #f7f7f5; --panel: #ffffff; --ink: #1d1d1b; --muted: #5f5f5a; --line: #e2e2dc;
+    --accent: #1f4e79; --hawk: #b03a2e; --neutral: #9a9a94; --dove: #2e7d4f;
+    --hawk-bg: #f6dcd8; --neutral-bg: #ececea; --dove-bg: #d7ecdf;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink);
+         font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif; }
+  main { max-width: 1040px; margin: 0 auto; padding: 28px 16px 60px; }
+  h1 { font-size: 1.7rem; margin: 0 0 6px; letter-spacing: -0.01em; }
+  h2 { font-size: 1.15rem; margin: 26px 0 8px; }
+  p { margin: 0 0 10px; }
+  a { color: var(--accent); }
+  .lede { color: var(--muted); max-width: 760px; }
+  .tag { display: inline-block; font-size: 0.78rem; padding: 2px 8px; border-radius: 99px;
+         background: #e8eef5; color: var(--accent); margin-right: 6px; }
+  nav { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin: 22px 0 18px; }
+  nav button { background: none; border: 0; padding: 10px 14px; font: inherit; color: var(--muted);
+               border-bottom: 2px solid transparent; cursor: pointer; }
+  nav button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); font-weight: 600; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px; }
+  textarea { width: 100%; min-height: 140px; padding: 12px; font: inherit; border: 1px solid var(--line);
+             border-radius: 8px; resize: vertical; background: #fcfcfb; color: var(--ink); }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; margin-top: 10px; }
+  .btn { background: var(--accent); color: #fff; border: 0; border-radius: 8px; padding: 10px 18px;
+         font: inherit; font-weight: 600; cursor: pointer; }
+  .btn:disabled { opacity: 0.55; cursor: progress; }
+  .chip { background: #fff; border: 1px solid var(--line); border-radius: 99px; padding: 6px 12px;
+          font: inherit; font-size: 0.9rem; cursor: pointer; color: var(--muted); }
+  .status { color: var(--muted); font-size: 0.92rem; min-height: 1.4em; margin-top: 10px; }
+  .legend span { display: inline-block; padding: 1px 8px; border-radius: 4px; margin-right: 6px; font-size: 0.85rem; }
+  .s-hawkish { background: var(--hawk-bg); border-bottom: 2px solid var(--hawk); }
+  .s-neutral { background: var(--neutral-bg); border-bottom: 2px solid var(--neutral); }
+  .s-dovish  { background: var(--dove-bg); border-bottom: 2px solid var(--dove); }
+  .sentences { line-height: 2; margin: 12px 0; }
+  .sentences span { padding: 2px 3px; border-radius: 3px; }
+  .summary { font-size: 1.02rem; margin: 14px 0 6px; }
+  .bar { display: flex; height: 10px; border-radius: 5px; overflow: hidden; margin: 6px 0 14px; max-width: 420px; }
+  .table-wrap { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 0.9rem; }
+  th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; white-space: nowrap; }
+  td.num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .scroll { max-height: 420px; overflow: auto; }
+  .note { font-size: 0.88rem; color: var(--muted); }
+  #chart { width: 100%; min-height: 760px; }
+  [hidden] { display: none !important; }
+  @media (max-width: 640px) { #chart { min-height: 620px; } h1 { font-size: 1.4rem; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>Bank of Ghana policy tone</h1>
+  <p class="lede">Is a Monetary Policy Committee statement <b>hawkish</b> (leaning towards tighter policy and
+  higher rates), <b>dovish</b> (leaning towards easier policy and lower rates) or <b>neutral</b>? A FinBERT model
+  fine-tuned on sentences from Bank of Ghana MPC statements, 2003–2026, runs here in your browser.</p>
+  <p><span class="tag">Research prototype v0</span><span class="tag">Not financial advice</span>
+  <a href="https://github.com/Mbibachris/cb-policy-tone">Code and method on GitHub</a></p>
+
+  <nav role="tablist">
+    <button role="tab" aria-selected="true" data-tab="classify">Classify text</button>
+    <button role="tab" aria-selected="false" data-tab="index">Tone index</button>
+    <button role="tab" aria-selected="false" data-tab="about">About</button>
+  </nav>
+
+  <section id="tab-classify">
+    <div class="panel">
+      <label for="text"><b>Text</b></label>
+      <textarea id="text" placeholder="Paste a paragraph or a whole MPC statement…"></textarea>
+      <div class="row">
+        <button class="btn" id="run">Classify</button>
+        <span class="note">Examples:</span>
+        <button class="chip" data-example="0">Inflation pressures</button>
+        <button class="chip" data-example="1">Disinflation</button>
+        <button class="chip" data-example="2">Banking sector</button>
+      </div>
+      <div class="status" id="status">The model (about 220 MB) downloads the first time you press Classify, then stays cached by your browser.</div>
+    </div>
+    <div id="results" hidden>
+      <div class="summary" id="summary"></div>
+      <div class="bar" id="bar"></div>
+      <div class="legend"><span class="s-hawkish">hawkish</span><span class="s-neutral">neutral</span><span class="s-dovish">dovish</span></div>
+      <div class="sentences" id="sentences"></div>
+      <div class="panel table-wrap"><table id="probs"></table></div>
+      <p class="note">The published index leaves out the sentence that announces the rate decision, so a full
+      statement scored here is not exactly comparable with it.</p>
+    </div>
+  </section>
+
+  <section id="tab-index" hidden>
+    <p id="index-intro" class="note"></p>
+    <div class="panel"><div id="chart"></div></div>
+    <h2>Meetings</h2>
+    <div class="panel table-wrap scroll"><table id="meetings"></table></div>
+  </section>
+
+  <section id="tab-about" hidden>
+    <div class="panel">
+      <h2 style="margin-top:0">How it works</h2>
+      <ol>
+        <li><b>Data.</b> 121 MPC statements scraped from the Bank of Ghana website, matched to 132 regular meetings
+        (2002–2026) and split into about 10,000 sentences.</li>
+        <li><b>Labels.</b> A rule-based lexicon, written from a published codebook, labels every sentence. Its rules
+        depend on <i>what</i> is moving: rising inflation is hawkish, rising growth risks are dovish. Sentences that
+        announce the rate decision are left out.</li>
+        <li><b>Model.</b> <code>ProsusAI/finbert</code> fine-tuned on those rule labels (train ≤ 2018, validation
+        2019–2021, test 2022–2026), exported to ONNX at 16-bit precision so it runs in the browser (8-bit versions changed too many labels and were rejected).</li>
+        <li><b>Index.</b> For each statement, the average of P(hawkish) − P(dovish) over its sentences, shown as a
+        z-score. Only movements over time carry meaning, not the level.</li>
+      </ol>
+      <h2>What it can and cannot tell you</h2>
+      <ul>
+        <li>In an ordered probit, a more hawkish statement is followed by a higher chance of a hike at the next
+        meeting, controlling for the latest rate moves and inflation (116 meetings).</li>
+        <li>It does <b>not</b> improve forecasts of 2019–2026 decisions out of sample. Tone tracks policy; it does not
+        predict it better than past decisions and inflation already do.</li>
+        <li>The model learned from rule-based labels, so the two tone lines agree by construction. Accuracy against
+        hand-labelled sentences is <b>pending</b> (a 400-sentence blind gold set is being labelled).</li>
+        <li>A sentence about rising inflation reads as hawkish even when inflation is low, as in 2026.</li>
+        <li>Inflation is the figure quoted in each statement, hand-checked against the text; it is not an official
+        CPI series.</li>
+      </ul>
+      <p class="note">Christopher Mbiba · <a href="https://github.com/Mbibachris/cb-policy-tone">github.com/Mbibachris/cb-policy-tone</a>
+      · <a href="https://huggingface.co/Kobichris/cb-policy-tone">model card</a></p>
+    </div>
+  </section>
+</main>
+
+<script type="module">
+const CONFIG = Object.assign({
+  model: "Kobichris/cb-policy-tone",
+  transformers: "https://cdn.jsdelivr.net/npm/@huggingface/transformers@3.8.1",
+  data: "data.json",
+  maxSentences: 200,
+  dtypes: ["q8", "fp16"],   // tried in order: 8-bit first, then 16-bit
+}, window.CB_CONFIG || {});
+
+const LABELS = ["hawkish", "neutral", "dovish"];
+const COLOURS = { hawkish: "#b03a2e", neutral: "#9a9a94", dovish: "#2e7d4f" };
+const EXAMPLES = [
+  "Inflation pressures have intensified, driven by exchange rate depreciation and upward adjustments in utility tariffs. The Committee judged that the risks to the inflation outlook are tilted to the upside.",
+  "Headline inflation has declined for the sixth consecutive month and is expected to return to the medium-term target band earlier than projected. Growth has slowed, and private sector credit remains weak.",
+  "The banking sector remains liquid, well capitalised and profitable. Total assets grew by 18.2 percent year-on-year.",
+];
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+// ---------------------------------------------------------------- tabs
+let chartDrawn = false;
+document.querySelectorAll("nav button").forEach((b) => b.addEventListener("click", () => {
+  document.querySelectorAll("nav button").forEach((x) => x.setAttribute("aria-selected", x === b));
+  ["classify", "index", "about"].forEach((t) => ($("tab-" + t).hidden = t !== b.dataset.tab));
+  if (b.dataset.tab === "index" && !chartDrawn) drawIndex();
+}));
+document.querySelectorAll("[data-example]").forEach((b) =>
+  b.addEventListener("click", () => { $("text").value = EXAMPLES[+b.dataset.example]; }));
+
+// ---------------------------------------------------------------- sentences
+const ABBR = ["U.S.", "U.K.", "e.g.", "i.e.", "No.", "Mr.", "Mrs.", "Dr.", "St.", "vs.", "etc."];
+function splitSentences(text) {
+  let t = (text || "").replace(/\s+/g, " ").trim();
+  if (!t) return [];
+  for (const a of ABBR) t = t.split(a).join(a.replace(/\./g, "<DOT>"));
+  return t.split(/(?<=[.!?])\s+(?=[A-Z\[("“])/).map((s) => s.replace(/<DOT>/g, ".").trim()).filter(Boolean);
+}
+
+// ---------------------------------------------------------------- model
+let classifier = null;
+async function getClassifier() {
+  if (classifier) return classifier;
+  const { pipeline, env } = await import(CONFIG.transformers);
+  if (CONFIG.localModels) { env.allowRemoteModels = false; env.allowLocalModels = true; env.localModelPath = CONFIG.localModels; }
+  if (CONFIG.wasmPaths) env.backends.onnx.wasm.wasmPaths = CONFIG.wasmPaths;
+  const seen = {};
+  const progress_callback = (p) => {
+    if (p.status === "progress" && p.total) {
+      seen[p.file] = [p.loaded, p.total];
+      const [l, t] = Object.values(seen).reduce((a, v) => [a[0] + v[0], a[1] + v[1]], [0, 0]);
+      $("status").textContent = `Downloading the model… ${Math.round(l / 1e6)} of ${Math.round(t / 1e6)} MB`;
+    }
+  };
+  let lastError;
+  for (const dtype of CONFIG.dtypes) {
+    try {
+      classifier = await pipeline("text-classification", CONFIG.model, { dtype, progress_callback });
+      console.log("loaded model with dtype", dtype);
+      break;
+    } catch (err) {
+      lastError = err;
+      console.warn("could not load dtype", dtype, err);
+    }
+  }
+  if (!classifier) throw lastError;
+  return classifier;
+}
+
+function toProbs(out) {
+  const p = Object.fromEntries(LABELS.map((l) => [l, 0]));
+  for (const { label, score } of out) p[label.toLowerCase()] = score;
+  return p;
+}
+
+async function classify() {
+  const sentences = splitSentences($("text").value);
+  if (!sentences.length) { $("status").textContent = "Paste one or more sentences first."; return; }
+  const cut = sentences.length > CONFIG.maxSentences;
+  const todo = sentences.slice(0, CONFIG.maxSentences);
+  $("run").disabled = true;
+  try {
+    $("status").textContent = "Loading the model…";
+    const clf = await getClassifier();
+    const probs = [];
+    for (let i = 0; i < todo.length; i += 8) {
+      $("status").textContent = `Scoring sentence ${Math.min(i + 8, todo.length)} of ${todo.length}…`;
+      const batch = todo.slice(i, i + 8);
+      let out = await clf(batch, { top_k: null });
+      if (batch.length === 1 && !Array.isArray(out[0])) out = [out];
+      out.forEach((o) => probs.push(toProbs(o)));
+    }
+    render(todo, probs, cut);
+    $("status").textContent = "Done. Everything ran in your browser; nothing was sent to a server.";
+  } catch (err) {
+    console.error(err);
+    $("status").textContent = "Something went wrong loading or running the model: " + err.message;
+  } finally {
+    $("run").disabled = false;
+  }
+}
+$("run").addEventListener("click", classify);
+
+function render(sentences, probs, cut) {
+  const tone = probs.map((p) => LABELS.reduce((a, b) => (p[b] > p[a] ? b : a)));
+  const counts = Object.fromEntries(LABELS.map((l) => [l, tone.filter((t) => t === l).length]));
+  const net = probs.reduce((s, p) => s + p.hawkish - p.dovish, 0) / probs.length;
+  const lean = net > 0.05 ? "hawkish" : net < -0.05 ? "dovish" : "balanced";
+  $("summary").innerHTML = `<b>${sentences.length} sentence${sentences.length > 1 ? "s" : ""}</b>: ` +
+    LABELS.map((l) => `${counts[l]} ${l}`).join(", ") +
+    `. Net tone <b>${net >= 0 ? "+" : "−"}${Math.abs(net).toFixed(2)}</b> on a scale from −1 (all dovish) to +1 (all hawkish), so this text leans <b>${lean}</b>.` +
+    (cut ? ` Only the first ${CONFIG.maxSentences} sentences were scored.` : "");
+  $("bar").innerHTML = LABELS.map((l) =>
+    `<div style="width:${(100 * counts[l]) / sentences.length}%;background:${COLOURS[l]}" title="${counts[l]} ${l}"></div>`).join("");
+  $("sentences").innerHTML = sentences.map((s, i) =>
+    `<span class="s-${tone[i]}" title="${tone[i]} · P(hawkish) ${probs[i].hawkish.toFixed(2)} · P(dovish) ${probs[i].dovish.toFixed(2)}">${esc(s)}</span>`).join(" ");
+  $("probs").innerHTML = "<tr><th>#</th><th>tone</th>" + LABELS.map((l) => `<th>P(${l})</th>`).join("") + "<th>sentence</th></tr>" +
+    sentences.map((s, i) => `<tr><td class="num">${i + 1}</td><td><span class="s-${tone[i]}">${tone[i]}</span></td>` +
+      LABELS.map((l) => `<td class="num">${probs[i][l].toFixed(3)}</td>`).join("") + `<td>${esc(s)}</td></tr>`).join("");
+  $("results").hidden = false;
+}
+
+// ---------------------------------------------------------------- tone index
+async function drawIndex() {
+  chartDrawn = true;
+  let rows;
+  try { rows = await (await fetch(CONFIG.data)).json(); }
+  catch (err) { $("index-intro").textContent = "The index data could not be loaded."; return; }
+  const withTone = rows.filter((r) => r.model_z !== null);
+  $("index-intro").textContent = `${withTone.length} regular meetings with a statement online, 2003–2026. ` +
+    "Hover over a point for the meeting and its decision. Tone is a z-score: higher means more hawkish.";
+  const hover = (r) => `Meeting ${r.meeting}<br>${r.date}<br>Decision: ${r.decision || "n/a"}`;
+  const tone = (key, name, colour) => {
+    const rr = rows.filter((r) => r[key] !== null);
+    return { x: rr.map((r) => r.date), y: rr.map((r) => r[key]), name, type: "scatter", mode: "lines+markers",
+      marker: { size: 4 }, line: { color: colour, width: 1.5 }, xaxis: "x", yaxis: "y",
+      text: rr.map(hover), hovertemplate: "%{text}<br>Tone %{y:.2f}<extra>" + name + "</extra>" };
+  };
+  const moves = (sign, symbol, colour, name) => {
+    const rr = rows.filter((r) => r.change !== null && Math.sign(r.change) === sign);
+    return { x: rr.map((r) => r.date), y: rr.map((r) => r.mpr), name, type: "scatter", mode: "markers",
+      marker: { symbol, color: colour, size: 8 }, xaxis: "x2", yaxis: "y2", hoverinfo: "skip" };
+  };
+  const infl = rows.filter((r) => r.infl !== null);
+  const traces = [
+    tone("model_z", "Fine-tuned model", "#1f4e79"),
+    tone("lexicon_z", "Lexicon", "#c0792b"),
+    { x: rows.map((r) => r.date), y: rows.map((r) => r.mpr), name: "Policy rate", type: "scatter", mode: "lines",
+      line: { shape: "hv", color: "#222", width: 1.5 }, xaxis: "x2", yaxis: "y2",
+      text: rows.map(hover), hovertemplate: "%{text}<br>Rate %{y:.2f}%<extra></extra>" },
+    moves(1, "triangle-up", COLOURS.hawkish, "Hike"),
+    moves(-1, "triangle-down", COLOURS.dovish, "Cut"),
+    { x: infl.map((r) => r.date), y: infl.map((r) => r.infl), name: "Inflation", type: "scatter", mode: "lines+markers",
+      marker: { size: 4 }, line: { color: "#6a3d9a", width: 1.5 }, xaxis: "x3", yaxis: "y3",
+      text: infl.map(hover), hovertemplate: "%{text}<br>Inflation %{y:.1f}%<extra></extra>" },
+  ];
+  const axisTitle = (t) => ({ text: t, font: { size: 12 } });
+  Plotly.newPlot("chart", traces, {
+    grid: { rows: 3, columns: 1, pattern: "independent", roworder: "top to bottom" },
+    xaxis: { matches: "x3", showticklabels: false }, xaxis2: { matches: "x3", showticklabels: false }, xaxis3: {},
+    yaxis: { title: axisTitle("Tone (z)"), zeroline: true, zerolinecolor: "#bbb" },
+    yaxis2: { title: axisTitle("Policy rate %") },
+    yaxis3: { title: axisTitle("Inflation %") },
+    margin: { l: 60, r: 16, t: 16, b: 40 }, height: document.getElementById("chart").clientHeight || 760,
+    legend: { orientation: "h", y: -0.08 }, hovermode: "closest",
+    paper_bgcolor: "#fff", plot_bgcolor: "#fff", font: { family: "system-ui, sans-serif", color: "#1d1d1b" },
+  }, { responsive: true, displaylogo: false });
+  const fmt = (v, d) => (v === null ? "" : v.toFixed(d));
+  $("meetings").innerHTML = "<tr><th>Date</th><th>Meeting</th><th>Policy rate %</th><th>Decision</th><th>Tone (model, z)</th><th>Tone (lexicon, z)</th><th>Inflation %</th></tr>" +
+    [...rows].reverse().map((r) => `<tr><td class="num">${r.date}</td><td class="num">${r.meeting}</td><td class="num">${fmt(r.mpr, 2)}</td>` +
+      `<td>${esc(r.decision || "")}</td><td class="num">${fmt(r.model_z, 2)}</td><td class="num">${fmt(r.lexicon_z, 2)}</td><td class="num">${fmt(r.infl, 1)}</td></tr>`).join("");
+}
+</script>
+</body>
+</html>

@@ -3,6 +3,7 @@
 Run from the project folder:
   python scripts/check_inflation.py              one line per meeting in YEARS, with its sentence
   python scripts/check_inflation.py 37 38 118    EVERY inflation sentence in those meetings
+  python scripts/check_inflation.py --years 2003 2004    one line per meeting in those years
 
 It only reads the statements and the inflation file. It does not touch any labels.
 """
@@ -25,7 +26,11 @@ table["date"] = pd.to_datetime(table["meeting_end"])
 table = table.dropna(subset=["meeting_no"])
 table["meeting_no"] = table["meeting_no"].astype(int)
 
-wanted = [int(a) for a in sys.argv[1:]]
+args = sys.argv[1:]
+if args and args[0] == "--years":
+    YEARS = [int(a) for a in args[1:]]
+    args = []
+wanted = [int(a) for a in args]
 if wanted:
     table = table[table["meeting_no"].isin(wanted)]
 else:
@@ -33,13 +38,8 @@ else:
 
 for row in table.sort_values("date").itertuples():
     print("=" * 70)
-    print(
-        f"Meeting {row.meeting_no}  |  {row.date:%d %b %Y}  |  value read: {row.infl}"
-    )
-    sentences = [
-        r["text"]
-        for r in split_statement(Path(row.txt_file).read_text(encoding="utf-8"))
-    ]
+    print(f"Meeting {row.meeting_no}  |  {row.date:%d %b %Y}  |  value read: {row.infl}")
+    sentences = [r["text"] for r in split_statement(Path(row.txt_file).read_text(encoding="utf-8"))]
     if wanted:
         for sentence in sentences:
             if "inflation" in sentence.lower() and PERCENT.search(sentence):
